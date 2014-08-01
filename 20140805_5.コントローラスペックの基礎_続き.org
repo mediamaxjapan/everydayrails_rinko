@@ -1,0 +1,325 @@
+* コントローラスペックの基礎
+** GETリクエストをテストする
+  - 標準のCRUDのGETリクエスト
+    - index, show, new, edit
+*** 簡単な例
+  #+BEGIN_SRC ruby
+    describe 'GET #show' do
+      # @contact に要求された連絡先を割り当てること
+      it "assigns the requested contact to @contact" do
+        contact = create(:contact)
+        get :show, id: contact
+        expect(assigns(:contact)).to eq contact
+      end
+    
+      # :show テンプレートを表示すること
+      it "renders the :show template" do
+        contact = create(:contact)
+        get :show, id: contact
+        expect(response).to render_template :show
+      end
+    end
+  #+END_SRC
+  - ここでのポイント(Controllerとのやりとり用DSL)
+    + HTTP メソッド, コントローラのメソッド名のシンボル, パラメータを受け取る
+    + コントローラのメソッドでインスタンス化された変数はassigns(: 変数名) で評価される
+    + コントローラのメソッドから返された最終的な成果はresponse を使って評価される
+*** もう少し難しい例
+  #+BEGIN_SRC ruby
+     describe 'GET #index' do
+       # params[:letter] がある場合
+       context 'with params[:letter]' do
+         # 指定された文字で始まる連絡先を配列にまとめること
+         it "populates an array of contacts starting with the letter" do
+           smith = create(:contact, lastname: 'Smith')
+           jones = create(:contact, lastname: 'Jones')
+           get :index, letter: 'S'
+           expect(assigns(:contacts)).to match_array([smith])
+         end
+    
+         # :index テンプレートを表示すること
+         it "renders the :index template" do
+           get :index, letter: 'S'
+           expect(response).to render_template :index
+         end
+       end
+    
+       # params[:letter] がない場合
+       context 'without params[:letter]' do
+         # 全ての連絡先を配列にまとめること
+         it "populates an array of all contacts" do
+           smith = create(:contact, lastname: 'Smith')
+           jones = create(:contact, lastname: 'Jones')
+           get :index
+           expect(assigns(:contacts)).to match_array([smith, jones])
+         end
+    
+         # :index テンプレートを表示すること
+         it "renders the :index template" do
+           get :index
+           expect(response).to render_template :index
+         end
+       end
+     end
+  #+END_SRC
+  - =match_array= は配列の中身を確認するが、順番は確認しない
+    - 順番が重要になる場合は =eq= マッチャを使うこと
+  - コードの重複はあとできれいにする
+*** 残りのGETメソッド new と edit
+  #+BEGIN_SRC ruby
+    describe 'GET #new' do
+      # @contact に新しい連絡先を割り当てること
+      it "assigns a new Contact to @contact" do
+        get :new
+        expect(assigns(:contact)).to be_a_new(Contact)
+      end
+    
+      # :new テンプレートを表示すること
+      it "renders the :new template" do
+        get :new
+        expect(response).to render_template :new
+      end
+    end
+    
+    describe 'GET #edit' do
+      # @contact に要求された連絡先を割り当てること
+      it "assigns the requested contact to @contact" do
+        contact = create(:contact)
+        get :edit, id: contact
+        expect(assigns(:contact)).to eq contact
+      end
+    
+      # :edit テンプレートを表示すること
+      it "renders the :edit template" do
+        contact = create(:contact)
+        get :edit, id: contact
+        expect(response).to render_template :edit
+      end
+    end
+  #+END_SRC
+  - 特に特筆すべき新規要素はなし。
+** POSTリクエストをテストする
+  #+BEGIN_SRC ruby
+    describe "POST #create" do
+      before :each do
+        @phones = [
+                   attributes_for(:phone),
+                   attributes_for(:phone),
+                   attributes_for(:phone)
+                  ]
+      end
+    
+      # 有効な属性の場合
+      context "with valid attributes" do
+        # データベースに新しい連絡先を保存すること
+        it "saves the new contact in the database" do
+          expect{
+            post :create, contact: attributes_for(:contact,
+                                                  phones_attributes: @phones)
+          }.to change(Contact, :count).by(1)
+        end
+    
+        # contacts#show にリダイレクトすること
+        it "redirects to contacts#show" do
+          post :create, contact: attributes_for(:contact,
+                                                phones_attributes: @phones)
+          expect(response).to redirect_to contact_path(assigns[:contact])
+        end
+      end  
+
+      # 無効な属性の場合
+      context "with invalid attributes" do
+        # データベースに新しい連絡先を保存しないこと
+        it "does not save the new contact in the database" do
+          expect{
+            post :create,
+            contact: attributes_for(:invalid_contact)
+          }.to_not change(Contact, :count)
+        end
+    
+        # :new テンプレートを再表示すること
+        it "re-renders the :new template" do
+          post :create,
+          contact: attributes_for(:invalid_contact)
+          expect(response).to render_template :new
+        end
+      end
+    end
+  #+END_SRC
+  - ポイント
+    - =describe= と =context= 
+      - ３章で説明済み
+      - 交換可能だが、状態をあらわしたいときは =context= を使う
+    - =before= フック
+    - =expect=
+      - HTTPリクエスト全体をわたしている
+** PATCH リクエストをテストする
+   - モデルを更新したいとき。
+     - 古いバージョンのRailsではPUTを使う
+  #+BEGIN_SRC ruby
+    describe 'PATCH #update' do
+      before :each do
+        @contact = create(:contact,
+                          firstname: 'Lawrence', lastname: 'Smith')
+      end
+    
+      # 有効な属性の場合
+      context "valid attributes" do
+        # 要求された@contact を取得すること
+        it "locates the requested @contact" do
+          patch :update, id: @contact, contact: attributes_for(:contact)
+          expect(assigns(:contact)).to eq(@contact)
+        end
+    
+        # @contact の属性を変更すること
+        it "changes @contact's attributes" do
+          patch :update, id: @contact,
+          contact: attributes_for(:contact,
+                                  firstname: "Larry", lastname: "Smith")
+          @contact.reload
+          expect(@contact.firstname).to eq("Larry")
+          expect(@contact.lastname).to eq("Smith")
+        end
+    
+        # 更新した連絡先のページへリダイレクトすること
+        it "redirects to the updated contact" do
+          patch :update, id: @contact, contact: attributes_for(:contact)
+          expect(response).to redirect_to @contact
+        end
+    
+        # 無効な属性の場合
+        context "with invalid attributes" do
+          # 連絡先の属性を変更しないこと
+          it "does not change the contact's attributes" do
+            patch :update, id: @contact,
+            contact: attributes_for(:contact,
+                                    firstname: "Larry", lastname: nil)
+            @contact.reload
+            expect(@contact.firstname).to_not eq("Larry")
+            expect(@contact.lastname).to eq("Smith")
+          end
+    
+          # edit テンプレートを再表示すること
+          it "re-renders the edit template" do
+            patch :update, id: @contact,
+            contact: attributes_for(:invalid_contact)
+            expect(response).to render_template :edit
+          end
+        end
+      end
+    end  
+  #+END_SRC
+** DELETEリクエストをテストする 
+  - 最後にdestroyメソッドをテストする
+  #+BEGIN_SRC ruby
+    describe 'DELETE #destroy' do
+      before :each do
+        @contact = create(:contact)
+      end
+    
+      # 連絡先を削除すること
+      it "deletes the contact" do
+        expect{
+          delete :destroy, id: @contact
+        }.to change(Contact,:count).by(-1)
+      end
+    
+      # contacts#index にリダイレクトすること
+      it "redirects to contacts#index" do
+        delete :destroy, id: @contact
+        expect(response).to redirect_to contacts_url
+      end
+    end
+  #+END_SRC
+** 非CRUD なメソッドをテストする
+  #+BEGIN_SRC ruby
+    describe "PATCH hide_contact" do
+      before :each do
+        @contact = create(:contact)
+      end
+    
+      # 連絡先をhidden 状態にすること
+      it "marks the contact as hidden" do
+        patch :hide_contact, id: @contact
+        expect(@contact.reload.hidden?).to be_true
+      end
+    
+      # contacts#index にリダイレクトすること
+      it "redirects to contacts#index" do
+        patch :hide_contact, id: @contact
+        expect(response).to redirect_to contacts_url
+      end
+    end  
+  #+END_SRC
+  - ここではPATCHメソッドを使っている
+    - 既存の連絡先を更新しているから
+** 入れ子になったルーティングをテストする
+  - 例えば、config/routes.rbが以下のようになっているとき。
+  #+BEGIN_SRC ruby
+    resources :contacts do
+      resources :phones
+    end
+  #+END_SRC
+  - :showメソッドのパスは =/contacts/:contact_id/phones/:id= となる
+  #+BEGIN_SRC ruby
+    describe 'GET #show' do
+      # 電話番号用の:show テンプレートを表示すること
+      it "renders the :show template for the phone" do
+        contact = create(:contact)
+        phone = create(:phone, contact: contact)
+        get :show, id: phone, contact_id: contact.id
+        expect(response).to render_template :show
+      end
+    end
+  #+END_SRC
+** コントローラの非HTML 出力をテストする
+  - CSVを返すコントローラのメソッド
+  #+BEGIN_SRC ruby
+    def index
+      @contacts = Contact.all
+      respond_to do |format|
+        format.html # index.html.erb
+        format.csv do
+          send_data Contact.to_csv(@contacts),
+          type: 'text/csv; charset=iso-8859-1; header=present',
+          disposition: 'attachment; filename=contacts.csv'
+        end
+      end
+    end
+  #+END_SRC
+  - テストコードは以下
+  #+BEGIN_SRC ruby
+    describe 'CSV output' do
+      # CSV ファイルを返すこと
+      it "returns a CSV file" do
+        get :index, format: :csv
+        expect(response.headers['Content-Type']).to have_content 'text/csv'
+      end
+    
+      # 中身を返すこと
+      it 'returns content' do
+        create(:contact,
+               firstname: 'Aaron',
+               lastname: 'Sumner',
+               email: 'aaron@sample.com')
+        get :index, format: :csv
+        expect(response.body).to have_content 'Aaron Sumner,aaron@sample.com'
+      end
+    end  
+  #+END_SRC
+  - have_contentマッチャはCapybara提供。第８章で説明。
+  - modelがCSVの出力を提供するならmodelのテストとするのがよい。
+  #+BEGIN_SRC ruby
+    # カンマ区切りの値を返すこと
+    it "returns comma separated values" do
+      create(:contact,
+             firstname: 'Aaron',
+             lastname: 'Sumner',
+             email: 'aaron@sample.com')
+      expect(Contact.to_csv).to match /Aaron Sumner,aaron@sample.com/
+    end
+  #+END_SRC
+  - matchマッチャ: 正規表現と比較
+  - 同様に、JSON, XMLのテストもできる。
+    - コードをきれいにモジュール化しておくことが重要
+    - JSON API用コードサンプル: [[http://manning.com/katz/][Rails 3 in Action]] 
